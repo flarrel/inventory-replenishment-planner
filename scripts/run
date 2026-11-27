@@ -1,0 +1,69 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work=${PLANNER_WORK:-"$root/../work"}
+bootstrap_python=${PYTHON3:-python3}
+mkdir -p "$work/cache" "$work/tmp" "$work/downloads"
+work=$(CDPATH= cd -- "$work" && pwd)
+python=${PLANNER_PYTHON:-"$work/venv/bin/python"}
+dataset="$work/downloads/online-retail.csv"
+export PLANNER_WORK="$work"
+export TMPDIR="$work/tmp"
+export XDG_CACHE_HOME="$work/cache"
+export MPLCONFIGDIR="$work/cache/matplotlib"
+export LOKY_MAX_CPU_COUNT=1
+
+verify_dataset() {
+    "$bootstrap_python" - "$1" <<'PY'
+import hashlib
+import sys
+
+expected = "a2f79bbdd4463df6db8a3f5a50b9c980ae8f645a370bf5e2c0d6097f9e817b05"
+with open(sys.argv[1], "rb") as source:
+    actual = hashlib.file_digest(source, "sha256").hexdigest()
+if actual != expected:
+    raise SystemExit("The UCI Online Retail CSV did not match the expected checksum")
+PY
+}
+
+cd "$root"
+case "${1:-}" in
+    setup)
+        "$bootstrap_python" -m venv "$work/venv"
+        "$work/venv/bin/python" -m pip --cache-dir "$work/cache/pip" install -r requirements.txt
+        ;;
+    fetch)
+        if [ ! -f "$dataset" ]; then
+            pending=$(mktemp "$work/downloads/online-retail.XXXXXX")
+            trap 'rm -f "$pending"' EXIT
+            curl -fLSs --retry 2 --max-filesize 65000000 \
+                https://archive.ics.uci.edu/static/public/352/data.csv -o "$pending"
+            verify_dataset "$pending"
+            mv "$pending" "$dataset"
+        else
+            verify_dataset "$dataset"
+        fi
+        ;;
+    prepare)
+        source=${DATA_CSV:-"$dataset"}
+        if [ -z "${DATA_CSV:-}" ]; then
+            verify_dataset "$source"
+        fi
+        "$python" -m planner.data ingest --work "$work" --source "$source"
+        "$python" -m planner.data eda --work "$work"
+        "$python" -m planner.forecast --work "$work"
+        "$python" -m planner.inventory --work "$work"
+        ;;
+    verify)
+        "$python" -m unittest discover -s tests -v
+        "$python" tests/smoke_service.py
+        ;;
+    serve)
+        exec "$python" -m uvicorn planner.api:app --host 127.0.0.1 --port "${PORT:-8000}"
+        ;;
+    *)
+        printf 'Usage: %s {setup|fetch|prepare|verify|serve}\n' "$0" >&2
+        exit 2
+        ;;
+esac
