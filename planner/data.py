@@ -134,12 +134,13 @@ WEEKLY_SALES = """
 def selected_skus(db, start, stop, count):
     if count < 1 or start >= stop:
         raise ValueError("Selection requires a positive SKU count and a valid date window")
-    return [row[0] for row in db.execute(TOP_SKUS, {"start": start, "stop": stop, "count": count})]
+    parameters = {"start": str(start), "stop": str(stop), "count": count}
+    return [row[0] for row in db.execute(TOP_SKUS, parameters)]
 
 
 def weekly_sales(db, start, stop, skus):
     return db.execute(
-        WEEKLY_SALES, {"start": start, "stop": stop, "skus": json.dumps(skus)}
+        WEEKLY_SALES, {"start": str(start), "stop": str(stop), "skus": json.dumps(skus)}
     ).fetchall()
 
 
@@ -167,7 +168,7 @@ def explore(work):
             db.execute(
                 "SELECT sku, SUM(quantity) FROM transactions "
                 "WHERE day >= ? AND day < ? GROUP BY sku",
-                (start, stop),
+                (str(start), str(stop)),
             )
         )
     extract_totals = Counter()
@@ -181,7 +182,6 @@ def explore(work):
     values = np.array([row[2] for row in rows])
     positive = values[values > 0]
     per_week = np.array(list(totals_by_week.values()))
-    quarter_weeks = min(8, weeks // 3)
     summary = {
         "ingestion": ingestion,
         "first_week": str(start),
@@ -194,8 +194,8 @@ def explore(work):
         "median_sku_week_units": float(np.median(values)),
         "p90_sku_week_units": float(np.percentile(values, 90)),
         "median_nonzero_sku_week_units": float(np.median(positive)),
-        "first_eight_week_median_units": float(np.median(per_week[:quarter_weeks])),
-        "last_eight_week_median_units": float(np.median(per_week[-quarter_weeks:])),
+        "first_eight_week_median_units": float(np.median(per_week[:8])),
+        "last_eight_week_median_units": float(np.median(per_week[-8:])),
         "largest_sku_week_units": int(values.max()),
         "p90_without_largest_sku_week": float(np.percentile(np.sort(values)[:-1], 90)),
     }

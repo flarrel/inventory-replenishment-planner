@@ -90,7 +90,8 @@ def load_panel(database):
         if week_count < 28:
             raise ValueError("Training requires at least 28 complete weeks")
         train_end = start + timedelta(weeks=week_count - 16)
-        skus = selected_skus(db, start, train_end, 24)
+        # The SQL panel emits SKU columns in lexical order within each week.
+        skus = sorted(selected_skus(db, start, train_end, 24))
         rows = weekly_sales(db, start, stop, skus)
     weeks = [start + timedelta(weeks=i) for i in range(week_count)]
     if not skus or len(rows) != week_count * len(skus):
