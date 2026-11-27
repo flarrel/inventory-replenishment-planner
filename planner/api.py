@@ -82,8 +82,9 @@ def forecast(request: Request):
     }
 
 
-@app.get("/demo")
+@app.get("/demo", summary="Get a sample planning request")
 def demo(request: Request):
+    """Return a request with assumed opening stock and per-item costs."""
     skus = request.app.state.skus
     return {
         "scenario": "simulated starting stock and item economics",
